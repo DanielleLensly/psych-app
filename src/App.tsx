@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
+import PatientProfile from './pages/PatientProfile';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -15,6 +16,7 @@ function App() {
           <Route element={<ProtectedRoute allowedRoles={['admin', 'psychologist']} />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/patients/:id" element={<PatientProfile />} />
           </Route>
           <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>

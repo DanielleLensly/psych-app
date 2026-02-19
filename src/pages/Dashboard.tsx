@@ -1,5 +1,6 @@
 import { Users, Calendar, FileText } from 'lucide-react';
 import Layout from '../components/Layout';
+import PatientNotes from '../components/PatientNotes';
 
 export default function Dashboard() {
   return (
@@ -64,6 +65,20 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
-    </Layout>
+
+
+      {/* Patient Notes - Encrypted */}
+      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8 h-[600px]">
+        <PatientNotes />
+
+        {/* Placeholder for future features or additional encrypted data */}
+        <div className="bg-slate-50 border border-slate-200 border-dashed rounded-xl flex flex-col items-center justify-center text-slate-400 p-8">
+          <h3 className="font-medium text-slate-500 mb-2">Upcoming Feature</h3>
+          <p className="text-sm text-center max-w-xs">
+            More encrypted modules will be available here soon.
+          </p>
+        </div>
+      </div>
+    </Layout >
   );
 }

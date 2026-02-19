@@ -125,7 +125,11 @@ export default function Dashboard() {
             <div className="p-8 text-center text-slate-500">No patients found.</div>
           ) : (
             patients.map((patient) => (
-              <div key={patient.id} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between">
+              <div
+                key={patient.id}
+                className="p-4 hover:bg-blue-50 transition-all duration-200 flex items-center justify-between cursor-pointer border-l-4 border-transparent hover:border-blue-500"
+                onClick={() => navigate(`/patients/${patient.id}`)}
+              >
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 font-medium">
                     {patient.full_name?.[0]?.toUpperCase() || 'P'}
@@ -136,7 +140,10 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <button
-                  onClick={() => navigate(`/patients/${patient.id}`)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/patients/${patient.id}`);
+                  }}
                   className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                 >
                   View Profile

@@ -13,6 +13,16 @@ export default defineConfig({
   server: {
     port: 3000,
   },
+  optimizeDeps: {
+    include: [
+      'jspdf',
+      'jspdf-autotable',
+      'xlsx',
+      'file-saver',
+      'mammoth',
+      'pdfjs-dist'
+    ]
+  },
   test: {
     globals: true,
     environment: 'jsdom',

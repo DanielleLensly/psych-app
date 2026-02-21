@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Loader2, AlertCircle, FileText, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { Plus, Loader2, AlertCircle, FileText, ChevronDown, ChevronRight, X, Upload, Download } from 'lucide-react';
 import RichTextEditor from './RichTextEditor';
 import { noteTemplates } from '../constants/noteTemplates';
+import { exportService } from '../lib/exportService';
+import { importService } from '../lib/importService';
 
 interface Note {
   id: string;
@@ -27,6 +29,7 @@ export default function PatientNotes({ patientId }: PatientNotesProps) {
   const [isTemplateDropdownOpen, setIsTemplateDropdownOpen] = useState(false);
   const [selectedNoteForModal, setSelectedNoteForModal] = useState<Note | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getTemplateColorStyles = (content: string) => {
     const template = noteTemplates.find(t => t.id !== 'blank' && content.includes(t.name));
@@ -138,6 +141,34 @@ export default function PatientNotes({ patientId }: PatientNotesProps) {
     }
   };
 
+  const handleImportNote = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true); // Can reuse or create a small importing state
+      let importedHtml = '';
+
+      if (file.name.endsWith('.docx')) {
+        importedHtml = await importService.importWord(file);
+      } else if (file.name.endsWith('.pdf')) {
+        importedHtml = await importService.importPDF(file);
+      } else {
+        alert('Please upload a Word (.docx) or PDF document.');
+        return;
+      }
+
+      // Append or replace content
+      setNewNote((prev) => prev ? prev + importedHtml : importedHtml);
+    } catch (error: any) {
+      console.error('Import error:', error);
+      alert(`Failed to import file: ${error?.message || JSON.stringify(error)}`);
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     // For rich text, empty might be '<p></p>'
@@ -207,6 +238,23 @@ export default function PatientNotes({ patientId }: PatientNotesProps) {
             <div className="flex justify-between items-center mb-2">
               <div className="flex items-center gap-4">
                 <h4 className="text-sm font-semibold text-slate-700">New Note</h4>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImportNote}
+                  accept=".docx, .pdf"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-md shadow-sm transition-colors text-sm font-medium"
+                >
+                  <Upload className="w-4 h-4" />
+                  Import File
+                </button>
+
                 <div className="relative" ref={dropdownRef}>
                   <button
                     type="button"
@@ -363,13 +411,29 @@ export default function PatientNotes({ patientId }: PatientNotesProps) {
               <h3 className="font-semibold text-slate-800">
                 Patient Note
               </h3>
-              <button
-                onClick={() => setSelectedNoteForModal(null)}
-                className="p-1 min-w-0 bg-transparent text-slate-400 hover:text-slate-600 rounded-lg hover:bg-black/5 transition-colors"
-                title="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => exportService.exportHtmlToPDF(selectedNoteForModal.content, 'Patient_Note', 'Patient Note')}
+                  className="px-2 py-1 text-xs font-medium bg-white/50 hover:bg-white text-slate-700 rounded transition-colors flex items-center gap-1 border border-black/5"
+                  title="Export to PDF"
+                >
+                  <Download className="w-3 h-3" /> PDF
+                </button>
+                <button
+                  onClick={() => exportService.exportHtmlToWord(selectedNoteForModal.content, 'Patient_Note', 'Patient Note')}
+                  className="px-2 py-1 text-xs font-medium bg-white/50 hover:bg-white text-slate-700 rounded transition-colors flex items-center gap-1 border border-black/5"
+                  title="Export to Word"
+                >
+                  <Download className="w-3 h-3" /> Word
+                </button>
+                <button
+                  onClick={() => setSelectedNoteForModal(null)}
+                  className="p-1 ml-2 min-w-0 bg-transparent text-slate-400 hover:text-slate-600 rounded-lg hover:bg-black/5 transition-colors"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
               <div

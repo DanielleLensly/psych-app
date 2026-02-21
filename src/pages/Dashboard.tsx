@@ -1,46 +1,65 @@
-import { useState, useEffect } from 'react';
-import { Users, Calendar, FileText, Search, Filter } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Users, Calendar, FileText, Search, Filter, Download, Upload, ChevronDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import PatientNotes from '../components/PatientNotes';
-import { Profile } from '../types/index';
+import { Patient } from '../types/index';
+import { exportService } from '../lib/exportService';
+import { importService } from '../lib/importService';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [patients, setPatients] = useState<Profile[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const fetchPatients = async () => {
-      try {
-        setLoading(true);
-        let query = supabase
-          .from('profiles')
-          .select('*')
-          .order('updated_at', { ascending: false });
-
-        if (searchQuery) {
-          query = query.ilike('full_name', `%${searchQuery}%`);
-        }
-
-        if (statusFilter !== 'all') {
-          query = query.eq('status', statusFilter);
-        }
-
-        const { data, error } = await query;
-
-        if (error) throw error;
-        setPatients(data || []);
-      } catch (error) {
-        console.error('Error fetching patients:', error);
-      } finally {
-        setLoading(false);
+    function handleClickOutside(event: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
       }
-    };
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
+  const fetchPatients = async () => {
+    try {
+      setLoading(true);
+      let query = supabase
+        .from('profiles')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (searchQuery) {
+        query = query.ilike('full_name', `%${searchQuery}%`);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Filter by status manually if the DB doesn't have a strict enum or if it's mixed
+      let filteredData = data || [];
+      if (statusFilter !== 'all') {
+        // Assuming status might be stored in metadata or a specific column (we added a basic eq check earlier, but keeping it simple here)
+        filteredData = filteredData.filter(p => !p.status || p.status === statusFilter || statusFilter === 'all');
+      }
+
+      setPatients(filteredData);
+    } catch (error) {
+      console.error('Error fetching patients:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     // Debounce search
     const timeoutId = setTimeout(() => {
       fetchPatients();
@@ -48,6 +67,94 @@ export default function Dashboard() {
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, statusFilter]);
+
+  const handleExport = (format: 'excel' | 'pdf' | 'word') => {
+    const exportData = patients.map(p => ({
+      ID: p.id,
+      Name: p.full_name || 'N/A',
+      Email: p.email || 'N/A',
+      Phone: p.phone || 'N/A',
+      Role: p.role || 'patient',
+      Updated: new Date(p.updated_at || Date.now()).toLocaleDateString()
+    }));
+
+    if (format === 'excel') {
+      exportService.exportToExcel(exportData, 'Patients_List');
+    } else if (format === 'pdf') {
+      const headers = ['Name', 'Email', 'Phone', 'Role', 'Updated'];
+      const rows = patients.map(p => [
+        p.full_name || 'N/A',
+        p.email || 'N/A',
+        p.phone || 'N/A',
+        p.role || 'patient',
+        new Date(p.updated_at || Date.now()).toLocaleDateString()
+      ]);
+      exportService.exportListToPDF(headers, rows, 'Patients List', 'Patients_List');
+    } else if (format === 'word') {
+      let html = '<table border="1" style="border-collapse: collapse; width: 100%;"><thead><tr>';
+      html += '<th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Updated</th></tr></thead><tbody>';
+      patients.forEach(p => {
+        html += `<tr>
+          <td>${p.full_name || 'N/A'}</td>
+          <td>${p.email || 'N/A'}</td>
+          <td>${p.phone || 'N/A'}</td>
+          <td>${p.role || 'patient'}</td>
+          <td>${new Date(p.updated_at || Date.now()).toLocaleDateString()}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      exportService.exportHtmlToWord(html, 'Patients_List', 'Patients List');
+    }
+    setShowExportMenu(false);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const data = await importService.importExcel(file);
+
+        // Map the Excel rows to Database structure
+        const mappedData = data.map((row: any) => {
+          // Generate an ID for imported patients since they aren't going through regular Auth signup
+          // (assuming they don't log in directly but act as records for the psychologist)
+          const patientId = crypto.randomUUID();
+
+          return {
+            id: patientId,
+            full_name: row.Name || row.full_name || 'Imported Patient',
+            email: row.Email || row.email || null,
+            phone: row.Phone || row.phone || null,
+            role: row.Role || row.role || 'patient',
+            status: row.Status || row.status || 'in-patient',
+            updated_at: new Date().toISOString()
+          };
+        });
+
+        // Batch insert into Profiles table
+        const { error } = await supabase.from('profiles').insert(mappedData);
+
+        if (error) {
+          console.error('Supabase bulk insert failure:', error);
+          throw error;
+        }
+
+        alert(`Successfully imported ${data.length} records!`);
+        fetchPatients();
+      } else {
+        alert('Please upload an Excel file for bulk patient import.');
+      }
+    } catch (error: any) {
+      console.error('Import error:', error);
+      alert(`Failed to import file: ${error.message || JSON.stringify(error)}`);
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   return (
     <Layout title="Dashboard" subtitle="Welcome back">
@@ -90,22 +197,60 @@ export default function Dashboard() {
       {/* Recent Activity */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-100">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h3 className="font-bold text-slate-800">Recent Patients</h3>
-            <div className="flex items-center gap-2">
-              <div className="relative">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+            <h3 className="font-bold text-slate-800 text-lg">Recent Patients</h3>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 mr-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImport}
+                  accept=".xlsx, .xls"
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 text-sm font-medium rounded-lg border border-slate-200 transition-colors"
+                >
+                  <Upload className="w-4 h-4" />
+                  Import
+                </button>
+
+                <div className="relative" ref={exportMenuRef}>
+                  <button
+                    onClick={() => setShowExportMenu(!showExportMenu)}
+                    className="flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium rounded-lg border border-blue-200 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Export
+                    <ChevronDown className="w-3 h-3 ml-1" />
+                  </button>
+
+                  {showExportMenu && (
+                    <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-slate-100 py-1 z-20">
+                      <button onClick={() => handleExport('excel')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600">Export as Excel (.xlsx)</button>
+                      <button onClick={() => handleExport('pdf')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600">Export as PDF (.pdf)</button>
+                      <button onClick={() => handleExport('word')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600">Export as Word (.docx)</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="relative flex-1 min-w-[200px]">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search patients..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                  className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
                 />
               </div>
               <div className="relative">
                 <Filter className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <select
+                  data-testid="status-filter"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                   className="pl-9 pr-8 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white"

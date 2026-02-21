@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { PatientComment } from '../types';
-import { MessageSquare, Plus, Trash2, User } from 'lucide-react';
+import { MessageSquare, Plus, Trash2, User, Download, Upload, ChevronDown } from 'lucide-react';
+import { exportService } from '../lib/exportService';
+import { importService } from '../lib/importService';
 
 interface CommentsListProps {
   patientId: string;
@@ -12,6 +14,20 @@ export default function CommentsList({ patientId }: CommentsListProps) {
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     fetchComments();
@@ -70,6 +86,49 @@ export default function CommentsList({ patientId }: CommentsListProps) {
     }
   }
 
+  const handleExport = (format: 'excel' | 'pdf') => {
+    const exportData = comments.map(c => ({
+      Date: new Date(c.created_at).toLocaleString(),
+      Author: 'Admin',
+      Log: c.content
+    }));
+
+    if (format === 'excel') {
+      exportService.exportToExcel(exportData, 'Administrative_Logs');
+    } else if (format === 'pdf') {
+      const headers = ['Date', 'Author', 'Log Detail'];
+      const rows = comments.map(c => [
+        new Date(c.created_at).toLocaleString(),
+        'Admin',
+        c.content
+      ]);
+      exportService.exportListToPDF(headers, rows, 'Administrative Logs', 'Administrative_Logs');
+    }
+    setShowExportMenu(false);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const data = await importService.importExcel(file);
+        alert(`Successfully parsed ${data.length} logs. (Logic for inserting records to database is pending)`);
+        console.log('Imported Logs Data:', data);
+      } else {
+        alert('Please upload an Excel file for bulk log import.');
+      }
+    } catch (error) {
+      console.error('Import error:', error);
+      alert('Failed to import file');
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="space-y-6 pt-6 border-t border-slate-100">
       <div className="flex items-center justify-between">
@@ -77,13 +136,48 @@ export default function CommentsList({ patientId }: CommentsListProps) {
           <MessageSquare className="w-4 h-4 text-slate-500" />
           Administrative Logs
         </h3>
-        <button
-          onClick={() => setIsAdding(true)}
-          className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-        >
-          <Plus className="w-4 h-4" />
-          Add Log
-        </button>
+
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImport}
+            accept=".xlsx, .xls"
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="text-sm text-slate-600 hover:text-slate-800 font-medium flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 border border-slate-200 transition-colors"
+            title="Import from Excel"
+          >
+            <Upload className="w-4 h-4" /> Import
+          </button>
+
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1.5 px-2 py-1 rounded bg-blue-50 border border-blue-100 transition-colors"
+              title="Export Logs"
+            >
+              <Download className="w-4 h-4" /> Export
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-slate-100 py-1 z-20">
+                <button onClick={() => handleExport('excel')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Excel</button>
+                <button onClick={() => handleExport('pdf')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">PDF</button>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setIsAdding(true)}
+            className="text-sm text-white bg-blue-600 hover:bg-blue-700 font-medium flex items-center gap-1.5 px-3 py-1.5 rounded-lg shadow-sm transition-colors ml-2"
+          >
+            <Plus className="w-4 h-4" />
+            New
+          </button>
+        </div>
       </div>
 
       {isAdding && (

@@ -56,10 +56,10 @@ export default function Layout({ children, title, subtitle, actions }: LayoutPro
             Dashboard
           </Link>
           {/* Placeholders for other links */}
-          <a href="#" className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 rounded-lg font-medium transition-colors">
+          <Link to="/appointments" className={`flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${isActive('/appointments') ? 'text-blue-600 bg-blue-50' : 'text-slate-600 hover:bg-slate-50'}`}>
             <Calendar className="w-5 h-5" />
             Appointments
-          </a>
+          </Link>
           <a href="#" className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 rounded-lg font-medium transition-colors">
             <FileText className="w-5 h-5" />
             Notes

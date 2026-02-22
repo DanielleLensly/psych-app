@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Appointment } from '../types';
-import { Calendar, Clock, User, X, Edit2, Trash2, CheckCircle, XCircle, ArrowRight } from 'lucide-react';
+import { Calendar, Clock, User, X, Edit2, Trash2, CheckCircle, XCircle, ArrowRight, Bell, Mail, MessageSquare, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { sendReminder, ReminderChannel } from '../lib/reminderService';
 
 interface AppointmentWithPatient extends Appointment {
   profiles?: {
@@ -36,6 +37,10 @@ export default function AppointmentModal({ isOpen, onClose, appointment, onDelet
   const [rescheduleTime, setRescheduleTime] = useState('09:00');
   const [rescheduleDuration, setRescheduleDuration] = useState(60);
 
+  // Reminder send state
+  const [reminderSending, setReminderSending] = useState<ReminderChannel | null>(null);
+  const [reminderResult, setReminderResult] = useState<{ channel: ReminderChannel; ok: boolean; msg?: string } | null>(null);
+
   useEffect(() => {
     if (appointment) {
       setFormData(appointment);
@@ -43,6 +48,7 @@ export default function AppointmentModal({ isOpen, onClose, appointment, onDelet
       setRescheduleDate(appointment.date?.split('T')[0] || '');
       setRescheduleTime(appointment.date?.includes('T') ? appointment.date.split('T')[1].substring(0, 5) : '09:00');
       setRescheduleDuration(appointment.duration || 60);
+      setReminderResult(null);
     }
   }, [appointment]);
 
@@ -148,6 +154,70 @@ export default function AppointmentModal({ isOpen, onClose, appointment, onDelet
                   ? <p className="text-slate-700 whitespace-pre-wrap text-sm">{appointment.notes}</p>
                   : <p className="text-slate-400 italic text-sm">No notes provided.</p>}
               </div>
+
+              {/* ── Send Reminder ── */}
+              {appointment.status === 'Scheduled' && (
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                  <h5 className="text-xs font-semibold text-blue-700 uppercase mb-2 flex items-center gap-1.5">
+                    <Bell className="w-3.5 h-3.5" /> Send Reminder
+                  </h5>
+                  <div className="flex gap-2 flex-wrap">
+                    {(['email', 'sms'] as ReminderChannel[]).map(ch => {
+                      const isLoading = reminderSending === ch;
+                      const isDone = reminderResult?.channel === ch;
+                      const Icon = ch === 'email' ? Mail : MessageSquare;
+                      const label = ch === 'email' ? 'Email' : 'SMS';
+                      const baseClass = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all disabled:opacity-60';
+                      if (isLoading)
+                        return (
+                          <button key={ch} disabled className={`${baseClass} border-slate-200 text-slate-400 bg-white`}>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> {label}…
+                          </button>
+                        );
+                      if (isDone && reminderResult?.ok)
+                        return (
+                          <button key={ch} className={`${baseClass} border-green-200 text-green-700 bg-green-50`}>
+                            <CheckCircle className="w-3.5 h-3.5" /> Sent!
+                          </button>
+                        );
+                      if (isDone && !reminderResult?.ok)
+                        return (
+                          <button key={ch}
+                            onClick={async () => {
+                              setReminderSending(ch); setReminderResult(null);
+                              const patient = { full_name: appointment.profiles?.full_name || 'Patient', email: undefined as string | undefined, phone: undefined as string | undefined };
+                              const res = await sendReminder({ id: appointment.id, date: appointment.date, type: appointment.type, duration: appointment.duration }, patient, ch);
+                              setReminderSending(null);
+                              setReminderResult({ channel: ch, ok: res.success, msg: res.error });
+                            }}
+                            title={reminderResult?.msg || 'Error – click to retry'}
+                            className={`${baseClass} border-red-200 text-red-700 bg-red-50`}>
+                            <XCircle className="w-3.5 h-3.5" /> Retry {label}
+                          </button>
+                        );
+                      const idleClass = ch === 'email'
+                        ? 'border-blue-200 text-blue-700 bg-white hover:bg-blue-50'
+                        : 'border-purple-200 text-purple-700 bg-white hover:bg-purple-50';
+                      return (
+                        <button key={ch}
+                          onClick={async () => {
+                            setReminderSending(ch); setReminderResult(null);
+                            const patient = { full_name: appointment.profiles?.full_name || 'Patient', email: undefined as string | undefined, phone: undefined as string | undefined };
+                            const res = await sendReminder({ id: appointment.id, date: appointment.date, type: appointment.type, duration: appointment.duration }, patient, ch);
+                            setReminderSending(null);
+                            setReminderResult({ channel: ch, ok: res.success, msg: res.error });
+                          }}
+                          className={`${baseClass} ${idleClass}`}>
+                          <Icon className="w-3.5 h-3.5" /> {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {reminderResult && !reminderResult.ok && reminderResult.msg && (
+                    <p className="text-xs text-red-600 mt-2">{reminderResult.msg}</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

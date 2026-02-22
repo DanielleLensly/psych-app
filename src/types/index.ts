@@ -45,3 +45,49 @@ export interface PatientComment {
   content: string;
   created_at: string;
 }
+
+export interface AvailabilityDay {
+  id?: string;
+  day_of_week: number; // 0 = Sun … 6 = Sat
+  is_available: boolean;
+  start_time: string;  // "HH:MM"
+  end_time: string;
+}
+
+export interface AvailabilityException {
+  id?: string;
+  date: string;        // "YYYY-MM-DD"
+  is_available: boolean;
+  start_time?: string;
+  end_time?: string;
+  note?: string;
+}
+
+export interface PersonalBlock {
+  id: string;
+  user_id: string;
+  date: string;
+  duration: number;
+  label: string;
+  color: string; // purple | amber | slate | rose | teal
+  notes?: string;
+  created_at: string;
+}
+
+export interface Reminder {
+  id: string;
+  appointment_id: string;
+  channel: 'email' | 'sms';
+  status: 'pending' | 'sent' | 'failed';
+  scheduled_for: string;
+  sent_at?: string;
+  error_msg?: string;
+  created_at: string;
+  // Joined fields
+  appointments?: {
+    date: string;
+    type: string;
+    duration: number;
+    profiles?: { full_name: string; phone?: string; email?: string };
+  };
+}
